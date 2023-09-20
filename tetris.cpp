@@ -145,7 +145,7 @@ public:
 		BlockInfo blockInfo{};
 		blockInfo.block = static_cast<Block>(randomBlock(mt));
 		blockInfo.rotation = static_cast<int16_t>(randomRotation(mt));
-		blockInfo.row = 2;
+		blockInfo.row = 2;    // every new block will begin to fall down at this row, not 0.
 		blockInfo.col = TETRIS_WIDTH / 2;
 
 		return blockInfo;
@@ -259,12 +259,14 @@ class Tetris {
 		int16_t theBottomEmptyLine = findTheBottomEmptyLine();
 
 		for (int16_t r = TETRIS_HEIGHT + EXTRA_HEIGHT - 1; r > theBottomEmptyLine;) {
+			// after elimination, the current row is new, we have to review it.
 			if (rowIsFull(r)) {
 				for (int16_t rr = r - 1; rr >= theBottomEmptyLine; --rr) {
 					blocks[rr + 1] = blocks[rr];
 				}
 			}
 			else {
+				// only this row is not full, then --r
 				--r;
 			}
 		}
@@ -379,12 +381,14 @@ int main() {
 		while (accumulator > frameRate) {
 			accumulator -= frameRate;
 
+			// check events.
 			sf::Event event;
 			while (window.pollEvent(event)) {
 				if (event.type == sf::Event::Closed) {
 					window.close();
 				}
 				else if (event.type == sf::Event::KeyPressed) {
+					// blocks can move continuously.
 					if (event.key.code == sf::Keyboard::Up) {
 						tetris.rotate();
 					}
@@ -402,11 +406,13 @@ int main() {
 
 			++counter;
 			if (counter == 6) {
+				// even we don't press keys, block should fall down automatically.
 				tetris.moveDown();
 				counter = 0;
 			}
 		}
 
+		// rendering.
 		window.clear();
 		tetris.render(window);
 		window.display();
