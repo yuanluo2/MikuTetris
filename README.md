@@ -3,4 +3,5 @@
 ##### ===============================================
 ##### Tetris game made in C++14 with SFML game engine.
 
-![image](https://github.com/yuanluo2/MikuTetris/assets/49439486/812eb17e-85c0-45a3-aa43-196054b6bcf2)
+![image](https://github.com/yuanluo2/MikuTetris/assets/49439486/75bece82-971b-4bdf-89d2-e09c911d4aa2)
+
