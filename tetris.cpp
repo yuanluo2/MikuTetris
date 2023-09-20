@@ -36,7 +36,7 @@ constexpr int16_t TETRIS_HEIGHT = 28;
 constexpr int16_t EXTRA_HEIGHT = 4;
 constexpr int16_t BLOCK_SIZE = 20;
 
-using BlockCoord = std::array<Coordinate, 4>;
+using BlockCoord = array<Coordinate, 4>;
 
 /*
 * blocks and their coordinates, each block has 4 rotations. 
@@ -93,8 +93,8 @@ constexpr array<array<BlockCoord, 4>, 7> blockShapeMapping = {
 * blocks and their colors.
 */
 const array<sf::Color, 7> blockColorMapping = {
-	// I
-	sf::Color{ 255,   0,   0 },
+	// I (miku color #39C5BB)
+	sf::Color{  57, 197, 187 },
 	// O
 	sf::Color{ 255, 165,   0 },
 	// T
@@ -102,7 +102,7 @@ const array<sf::Color, 7> blockColorMapping = {
 	// S
 	sf::Color{   0, 128,   0 },
 	// Z
-	sf::Color{  57, 197, 187 },
+	sf::Color{ 255,   0,   0 },
 	// J
 	sf::Color{   0,   0, 255 },
 	// L
