@@ -345,7 +345,7 @@ public:
 	}
 
 	void render(sf::RenderTarget& rt) {
-		// first, rendering all blocks on the blocks array.
+		// 1. rendering all blocks in the blocks array.
 		for (int16_t row = EXTRA_HEIGHT; row < TETRIS_HEIGHT + EXTRA_HEIGHT; ++row) {
 			for (int16_t col = 0; col < TETRIS_WIDTH; ++col) {
 				if (blocks[row][col] != Block::Empty) {
@@ -354,7 +354,7 @@ public:
 			}
 		}
 
-		// second, rendering current block separately.
+		// 2. rendering current block separately.
 		const BlockCoord& blockCoord = currentBlockInfo.getCoord();
 		for (const auto& coord : blockCoord) {
 			int16_t row = currentBlockInfo.row + coord.y;
