@@ -1,18 +1,26 @@
 #include <algorithm>
+#include <initializer_list>
+#include <string>
 #include <array>
+#include <vector>
 #include <random>
+#include <exception>
+#include <stdexcept>
 #include <cstdint>
 #include <SFML/Graphics.hpp>
 
-using std::array;
+constexpr int32_t GAME_MAP_WIDTH = 16;
+constexpr int32_t GAME_MAP_HEIGHT = 28;
+constexpr int32_t GAME_MAP_EXTRA_HEIGHT = 4;
+constexpr int32_t BLOCK_ROW_BEGIN = 2;
+constexpr int32_t BLOCK_RENDER_SIDE_LENGTH = 20;
 
 /*
 * Classic tetris game has 7 kinds of block shapes: I O T S Z J L
 * and I use empty here to represent no block here.
-* They will be cast as array's index.
 */
-enum class Block : int16_t {
-	I, O, T, S, Z, J, L, Empty
+enum class BlockType {
+    I, O, T, S, Z, J, L, No_Block_Here
 };
 
 /*
@@ -20,26 +28,28 @@ enum class Block : int16_t {
 * so, yes, y-axis is opposite to the classical Cartesian coordinate system.
 */
 struct Coordinate {
-	int16_t x = 0, y = 0;
+    int32_t x;
+    int32_t y;
 
-	constexpr Coordinate() = default;
-	constexpr Coordinate(int16_t _x, int16_t _y) : x{ _x }, y{ _y } {};
+    constexpr Coordinate() : x{0}, y{0} {}
+    constexpr Coordinate(int32_t _x, int32_t _y) : x{_x}, y{_y} {}
 };
 
-/*
-* Some constants assosicated with the game.
-* EXTRA_HEIGHT used here is to achieve the effect of blocks slowly emerging from the top, that is, 
-* as time increases, the blocks gradually emerge from a partial exposure to a complete exposure.
-*/
-constexpr int16_t TETRIS_WIDTH = 16;
-constexpr int16_t TETRIS_HEIGHT = 28;
-constexpr int16_t EXTRA_HEIGHT = 4;
-constexpr int16_t BLOCK_SIZE = 20;
+using BlockShape = std::array<Coordinate, 4>;
+using BlockShapeTable = std::array<BlockShape, 4>;
 
-using BlockCoord = array<Coordinate, 4>;
+constexpr BlockShape make_block_shape(Coordinate c1, Coordinate c2, Coordinate c3, Coordinate c4) {
+    BlockShape bs;
+    bs[0] = c1;
+    bs[1] = c2;
+    bs[2] = c3;
+    bs[3] = c4;
+
+    return bs;
+}
 
 /*
-* blocks and their coordinates, each block has 4 rotations. 
+* 4 rotations with each block.
 * for example, let's take a look on the first line of T block, it looks like:
 * 
 *      0           O           O             x axis 
@@ -51,120 +61,136 @@ using BlockCoord = array<Coordinate, 4>;
 * 
 *              y  axis
 */
-constexpr array<array<BlockCoord, 4>, 7> blockShapeMapping = {
-	// I
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ -1, 0 }, Coordinate{ 1, 0 }, Coordinate{ 2, 0 } } },
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ 0, -1 }, Coordinate{ 0, 1 }, Coordinate{ 0, 2 } } },
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ 1, 0 }, Coordinate{ -1, 0 }, Coordinate{ -2, 0 } } },
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ 0, 1 }, Coordinate{ 0, -1 }, Coordinate{ 0, -2 } } },
-	// O
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ 1, 0 }, Coordinate{ 0, 1 }, Coordinate{ 1, 1 } } },
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ 1, 0 }, Coordinate{ 0, 1 }, Coordinate{ 1, 1 } } },
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ 1, 0 }, Coordinate{ 0, 1 }, Coordinate{ 1, 1 } } },
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ 1, 0 }, Coordinate{ 0, 1 }, Coordinate{ 1, 1 } } },
-	// T
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ -1, 0 }, Coordinate{ 1, 0 }, Coordinate{ 0, 1 } } },
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ 0, -1 }, Coordinate{ 0, 1 }, Coordinate{ -1, 0 } } },
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ 1, 0 }, Coordinate{ -1, 0 }, Coordinate{ 0, -1 } } },
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ 0, 1 }, Coordinate{ 0, -1 }, Coordinate{ 1, 0 } } },
-	// S
-	BlockCoord{ { Coordinate{ -1, -1 }, Coordinate{ -1, 0 }, Coordinate{ 0, 0 }, Coordinate{ 0, 1 } } },
-	BlockCoord{ { Coordinate{ 1, -1 }, Coordinate{ 0, -1 }, Coordinate{ 0, 0 }, Coordinate{ -1, 0 } } },
-	BlockCoord{ { Coordinate{ 1, 1 }, Coordinate{ 1, 0 }, Coordinate{ 0, 0 }, Coordinate{ 0, -1 } } },
-	BlockCoord{ { Coordinate{ -1, 1 }, Coordinate{ 0, 1 }, Coordinate{ 0, 0 }, Coordinate{ 1, 0 } } },
-	// Z
-	BlockCoord{ { Coordinate{ 0, -1 }, Coordinate{ 0, 0 }, Coordinate{ -1, 0 }, Coordinate{ -1, 1 } } },
-	BlockCoord{ { Coordinate{ 1, 0 }, Coordinate{ 0, 0 }, Coordinate{ 0, -1 }, Coordinate{ -1, -1 } } },
-	BlockCoord{ { Coordinate{ 0, 1 }, Coordinate{ 0, 0 }, Coordinate{ 1, 0 }, Coordinate{ 1, -1 } } },
-	BlockCoord{ { Coordinate{ -1, 0 }, Coordinate{ 0, 0 }, Coordinate{ 0, 1 }, Coordinate{ 1, 1 } } },
-	// J
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ 0, -1 }, Coordinate{ 0, -2 }, Coordinate{ -1, 0 } } },
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ 1, 0 }, Coordinate{ 2, 0 }, Coordinate{ 0, -1 } } },
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ 0, 1 }, Coordinate{ 0, 2 }, Coordinate{ 1, 0 } } },
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ -1, 0 }, Coordinate{ -2, 0 }, Coordinate{ 0, 1 } } },
-	// L
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ 0, -1 }, Coordinate{ 0, -2 }, Coordinate{ 1, 0 } } },
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ 1, 0 }, Coordinate{ 2, 0 }, Coordinate{ 0, 1 } } },
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ 0, 1 }, Coordinate{ 0, 2 }, Coordinate{ -1, 0 } } },
-	BlockCoord{ { Coordinate{ 0, 0 }, Coordinate{ -1, 0 }, Coordinate{ -2, 0 }, Coordinate{ 0, -1 } } },
+constexpr BlockShapeTable BLOCK_SHAPE_TABLE_I = {
+	make_block_shape({ 0, 0 }, { -1, 0 }, {  1,  0 }, {  2,  0 }),
+	make_block_shape({ 0, 0 }, { 0, -1 }, {  0,  1 }, {  0,  2 }),
+	make_block_shape({ 0, 0 }, { 1,  0 }, { -1,  0 }, { -2,  0 }),
+	make_block_shape({ 0, 0 }, { 0,  1 }, {  0, -1 }, {  0, -2 }),
 };
 
-/*
-* blocks and their colors.
-*/
-const array<sf::Color, 7> blockColorMapping = {
-	// I (miku color #39C5BB)
-	sf::Color{  57, 197, 187 },
-	// O
-	sf::Color{ 255, 165,   0 },
-	// T
-	sf::Color{ 255, 255,   0 },
-	// S
-	sf::Color{   0, 128,   0 },
-	// Z
-	sf::Color{ 255,   0,   0 },
-	// J
-	sf::Color{   0,   0, 255 },
-	// L
-	sf::Color{ 128,   0, 128 } 
+constexpr BlockShapeTable BLOCK_SHAPE_TABLE_O = {
+	make_block_shape({ 0, 0 }, { 1, 0 }, { 0, 1 }, { 1, 1 }),
+	make_block_shape({ 0, 0 }, { 1, 0 }, { 0, 1 }, { 1, 1 }),
+	make_block_shape({ 0, 0 }, { 1, 0 }, { 0, 1 }, { 1, 1 }),
+	make_block_shape({ 0, 0 }, { 1, 0 }, { 0, 1 }, { 1, 1 }),
 };
 
-/*
-* This class will record a block and its rotation, current row and column.
-*/
-struct BlockInfo {
-	Block block;
-	int16_t rotation, row, col;
+constexpr BlockShapeTable BLOCK_SHAPE_TABLE_T = {
+	make_block_shape({ 0, 0 }, { -1,  0 }, {  1,  0 }, {  0,  1 }),
+	make_block_shape({ 0, 0 }, {  0, -1 }, {  0,  1 }, { -1,  0 }),
+	make_block_shape({ 0, 0 }, {  1,  0 }, { -1,  0 }, {  0, -1 }),
+	make_block_shape({ 0, 0 }, {  0,  1 }, {  0, -1 }, {  1,  0 }),
+};
 
-	BlockInfo() = default;
+constexpr BlockShapeTable BLOCK_SHAPE_TABLE_S = {
+	make_block_shape({ -1, -1 }, { -1,  0 }, { 0, 0 }, {  0,  1 }),
+	make_block_shape({  1, -1 }, {  0, -1 }, { 0, 0 }, { -1,  0 }),
+	make_block_shape({  1,  1 }, {  1,  0 }, { 0, 0 }, {  0, -1 }),
+	make_block_shape({ -1,  1 }, {  0,  1 }, { 0, 0 }, {  1,  0 }),
+};
 
-	BlockInfo(Block _block, int16_t _rotation, int16_t _row, int16_t _col) :
-		block{ _block }, rotation{ _rotation }, row{ _row }, col{ _col }
-	{}
+constexpr BlockShapeTable BLOCK_SHAPE_TABLE_Z = {
+	make_block_shape({  0, -1 }, { 0, 0 }, { -1,  0 }, { -1,  1 }),
+	make_block_shape({  1,  0 }, { 0, 0 }, {  0, -1 }, { -1, -1 }),
+	make_block_shape({  0,  1 }, { 0, 0 }, {  1,  0 }, {  1, -1 }),
+	make_block_shape({ -1,  0 }, { 0, 0 }, {  0,  1 }, {  1,  1 }),
+};
 
-	const BlockCoord& getCoord() const noexcept {
-		return blockShapeMapping[static_cast<int16_t>(block)][rotation];
-	}
+constexpr BlockShapeTable BLOCK_SHAPE_TABLE_J = {
+	make_block_shape({ 0, 0 }, {  0, -1 }, {  0, -2 }, { -1,  0 }),
+	make_block_shape({ 0, 0 }, {  1,  0 }, {  2,  0 }, {  0, -1 }),
+	make_block_shape({ 0, 0 }, {  0,  1 }, {  0,  2 }, {  1,  0 }),
+	make_block_shape({ 0, 0 }, { -1,  0 }, { -2,  0 }, {  0,  1 }),
+};
 
-	const sf::Color& getColor() const noexcept {
-		return blockColorMapping[static_cast<int16_t>(block)];
-	}
+constexpr BlockShapeTable BLOCK_SHAPE_TABLE_L = {
+	make_block_shape({ 0, 0 }, {  0, -1 }, {  0, -2 }, {  1,  0 }),
+	make_block_shape({ 0, 0 }, {  1,  0 }, {  2,  0 }, {  0,  1 }),
+	make_block_shape({ 0, 0 }, {  0,  1 }, {  0,  2 }, { -1,  0 }),
+	make_block_shape({ 0, 0 }, { -1,  0 }, { -2,  0 }, {  0, -1 }),
+};
+
+class BlockTypeUnknownException : public std::exception {
+public:
+    const char* what() const noexcept override {
+        return "block type unknown";
+    }
+};
+
+BlockShape const& get_block_shape(BlockType type, uint32_t rotateTimes) {
+    switch(type) {
+        case BlockType::I: return BLOCK_SHAPE_TABLE_I[rotateTimes];
+        case BlockType::O: return BLOCK_SHAPE_TABLE_O[rotateTimes];
+        case BlockType::T: return BLOCK_SHAPE_TABLE_T[rotateTimes];
+        case BlockType::S: return BLOCK_SHAPE_TABLE_S[rotateTimes];
+        case BlockType::Z: return BLOCK_SHAPE_TABLE_Z[rotateTimes];
+        case BlockType::J: return BLOCK_SHAPE_TABLE_J[rotateTimes];
+        case BlockType::L: return BLOCK_SHAPE_TABLE_L[rotateTimes];
+        default: throw BlockTypeUnknownException{};
+    }
+}
+
+sf::Color get_block_color(BlockType type) {
+    switch(type) {
+        case BlockType::I: return sf::Color{  57, 197, 187 };
+        case BlockType::O: return sf::Color{ 255, 165,   0 };
+        case BlockType::T: return sf::Color{ 255, 255,   0 };
+        case BlockType::S: return sf::Color{   0, 128,   0 };
+        case BlockType::Z: return sf::Color{ 255,   0,   0 };
+        case BlockType::J: return sf::Color{   0,   0, 255 };
+        case BlockType::L: return sf::Color{ 128,   0, 128 };
+        default: throw BlockTypeUnknownException{};
+    }
+}
+
+struct Block {
+    BlockType type;
+    uint32_t rotationTimes;
+    int32_t row;
+    int32_t col;
+
+    BlockShape const& get_shape() const {
+        return get_block_shape(type, rotationTimes);
+    }
+
+    sf::Color get_color() const {
+        return get_block_color(type);
+    }
 };
 
 /*
 * Randomly generate a block.
 */
-class BlockGen {
+class BlockGenerator {
 	std::mt19937 mt{ std::random_device{}() };
-	std::uniform_int_distribution<unsigned int> randomBlock{ 0, 6 };
+	std::uniform_int_distribution<unsigned int> randomType{ 0, 6 };
 	std::uniform_int_distribution<unsigned int> randomRotation{ 0, 3 };
 public:
-	BlockGen() = default;
-
-	BlockInfo operator()() {
-		BlockInfo blockInfo{};
-		blockInfo.block = static_cast<Block>(randomBlock(mt));
-		blockInfo.rotation = static_cast<int16_t>(randomRotation(mt));
-		blockInfo.row = 2;    // every new block will begin to fall down at this row, not 0.
-		blockInfo.col = TETRIS_WIDTH / 2;
-
-		return blockInfo;
+	Block operator()() {
+		return Block {
+			.type = static_cast<BlockType>(randomType(mt)), 
+			.rotationTimes = static_cast<uint32_t>(randomRotation(mt)),
+			.row = BLOCK_ROW_BEGIN,
+			.col = GAME_MAP_WIDTH / 2
+		};
 	}
 };
 
 class Tetris {
-	array<array<Block, TETRIS_WIDTH>, TETRIS_HEIGHT + EXTRA_HEIGHT> blocks;
-	BlockInfo currentBlockInfo;
-	BlockGen blockGen;
-	bool gameOver;
+	std::array<std::array<BlockType, GAME_MAP_WIDTH>, GAME_MAP_HEIGHT + GAME_MAP_EXTRA_HEIGHT> gameMap;
+	BlockGenerator gen;
+	Block currentBlock;
+	bool gameOver = false;
 
-	// only check left side.
-	bool checkLeftCollision() {
-		const BlockCoord& blockCoord = currentBlockInfo.getCoord();
-		for (const auto& coord : blockCoord) {
-			int16_t row = currentBlockInfo.row + coord.y;
-			int16_t col = currentBlockInfo.col + coord.x;
-			if (col < 0 || blocks[row][col] != Block::Empty) {
+	template<typename BorderCrossFunc>
+	bool check_collision_base(BorderCrossFunc borderCross) {
+		BlockShape const& shape = currentBlock.get_shape();
+
+		for (const Coordinate& coord : shape) {
+			int32_t row = currentBlock.row + coord.y;
+			int32_t col = currentBlock.col + coord.x;
+
+			if(borderCross(row, col) || gameMap[row][col] != BlockType::No_Block_Here) {
 				return true;
 			}
 		}
@@ -172,60 +198,44 @@ class Tetris {
 		return false;
 	}
 
-	// only check right side.
-	bool checkRightCollision() {
-		const BlockCoord& blockCoord = currentBlockInfo.getCoord();
-		for (const auto& coord : blockCoord) {
-			int16_t row = currentBlockInfo.row + coord.y;
-			int16_t col = currentBlockInfo.col + coord.x;
-			if (col >= TETRIS_WIDTH || blocks[row][col] != Block::Empty) {
-				return true;
-			}
-		}
-
-		return false;
+	bool check_left_collision() {
+		return check_collision_base([](int32_t row, int32_t col) {
+			return col < 0;
+		});
 	}
 
-	// only check bottom.
-	bool checkBottomCollision() {
-		const BlockCoord& blockCoord = currentBlockInfo.getCoord();
-		for (const auto& coord : blockCoord) {
-			int16_t row = currentBlockInfo.row + coord.y;
-			int16_t col = currentBlockInfo.col + coord.x;
-
-			if (row >= TETRIS_HEIGHT + EXTRA_HEIGHT || blocks[row][col] != Block::Empty) {
-				return true;
-			}
-		}
-
-		return false;
+	bool check_right_collision() {
+		return check_collision_base([](int32_t row, int32_t col) {
+			return col >= GAME_MAP_WIDTH;
+		});
 	}
 
-	// check left, right, bottom.
-	bool checkAllCollision() {
-		const BlockCoord& blockCoord = currentBlockInfo.getCoord();
-		for (const auto& coord : blockCoord) {
-			int16_t row = currentBlockInfo.row + coord.y;
-			int16_t col = currentBlockInfo.col + coord.x;
-
-			if (row >= TETRIS_HEIGHT + EXTRA_HEIGHT || col < 0 || col >= TETRIS_WIDTH || blocks[row][col] != Block::Empty) {
-				return true;
-			}
-		}
-
-		return false;
+	bool check_bottom_collision() {
+		return check_collision_base([](int32_t row, int32_t col) {
+			return row >= GAME_MAP_HEIGHT + GAME_MAP_EXTRA_HEIGHT;
+		});
 	}
 
-	// the elements on this row is all Block::Empty ?
-	bool rowIsEmpty(int16_t rowIndex) {
-		const auto& row = blocks[rowIndex];
-		return std::all_of(row.cbegin(), row.cend(), [](Block block) { return block == Block::Empty; });
+	bool check_left_right_bottom_collision() {
+		return check_collision_base([](int32_t row, int32_t col) {
+			return row >= GAME_MAP_HEIGHT + GAME_MAP_EXTRA_HEIGHT || col < 0 || col >= GAME_MAP_WIDTH;
+		});
 	}
 
-	// the elements on this row is all not Block::Empty ?
-	bool rowIsFull(int16_t rowIndex) {
-		const auto& row = blocks[rowIndex];
-		return std::none_of(row.cbegin(), row.cend(), [](Block block) { return block == Block::Empty; });
+	bool row_is_empty(int32_t rowIndex) {
+		const auto& row = gameMap[rowIndex];
+		
+		return std::all_of(row.cbegin(), row.cend(), [](BlockType type) { 
+			return type == BlockType::No_Block_Here; 
+		});
+	}
+
+	bool row_is_full(int32_t rowIndex) {
+		const auto& row = gameMap[rowIndex];
+		
+		return std::none_of(row.cbegin(), row.cend(), [](BlockType type) { 
+			return type == BlockType::No_Block_Here; 
+		});
 	}
 
 	/* 
@@ -233,19 +243,20 @@ class Tetris {
 	* This function will search from the middle row, if middle row is all empty, then search down, 
 	* else search upper lines.
 	*/
-	int16_t findTheBottomEmptyLine() {
-		int16_t theBottomEmptyLine = (TETRIS_HEIGHT + EXTRA_HEIGHT) / 2;    // search starts from the middle row.
+	int32_t find_the_bottom_empty_line() {
+		// search starts from the middle row.
+		int32_t theBottomEmptyLine = (GAME_MAP_HEIGHT + GAME_MAP_EXTRA_HEIGHT) / 2;    
 
-		if (rowIsEmpty(theBottomEmptyLine)) {
-			for (int16_t r = theBottomEmptyLine + 1; r < TETRIS_HEIGHT + EXTRA_HEIGHT; ++r) {
-				if (rowIsEmpty(r)) {
+		if (row_is_empty(theBottomEmptyLine)) {
+			for (int32_t r = theBottomEmptyLine + 1; r < GAME_MAP_HEIGHT + GAME_MAP_EXTRA_HEIGHT; ++r) {
+				if (row_is_empty(r)) {
 					theBottomEmptyLine = r;
 				}
 			}
 		}
 		else {
-			for (int16_t r = theBottomEmptyLine - 1; r >= EXTRA_HEIGHT; --r) {
-				if (rowIsEmpty(r)) {
+			for (int32_t r = theBottomEmptyLine - 1; r >= GAME_MAP_EXTRA_HEIGHT; --r) {
+				if (row_is_empty(r)) {
 					return r;
 				}
 			}
@@ -254,15 +265,14 @@ class Tetris {
 		return theBottomEmptyLine;
 	}
 
-	// line elimination.
-	void tryEliminateLines() {
-		int16_t theBottomEmptyLine = findTheBottomEmptyLine();
+	void try_eliminate_lines() {
+		int32_t theBottomEmptyLine = find_the_bottom_empty_line();
 
-		for (int16_t r = TETRIS_HEIGHT + EXTRA_HEIGHT - 1; r > theBottomEmptyLine;) {
+		for (int32_t r = GAME_MAP_HEIGHT + GAME_MAP_EXTRA_HEIGHT - 1; r > theBottomEmptyLine;) {
 			// after elimination, the current row is new, we have to review it.
-			if (rowIsFull(r)) {
-				for (int16_t rr = r - 1; rr >= theBottomEmptyLine; --rr) {
-					blocks[rr + 1] = blocks[rr];
+			if (row_is_full(r)) {
+				for (int32_t rr = r - 1; rr >= theBottomEmptyLine; --rr) {
+					gameMap[rr + 1] = gameMap[rr];
 				}
 			}
 			else {
@@ -272,110 +282,117 @@ class Tetris {
 		}
 	}
 
-	// drawing a rectangle at given position.
-	void drawRect(sf::RenderTarget& rt, int16_t row, int16_t col, const sf::Color color) {
+	void draw_one_rect(sf::RenderTarget& rt, int32_t row, int32_t col, const sf::Color color) {
 		sf::RectangleShape rect;
 
-		rect.setPosition(sf::Vector2f{ static_cast<float>(col * BLOCK_SIZE), static_cast<float>((row - EXTRA_HEIGHT) * BLOCK_SIZE) });
-		rect.setSize(sf::Vector2f{ static_cast<float>(BLOCK_SIZE), static_cast<float>(BLOCK_SIZE) });
+		rect.setPosition(sf::Vector2f{ 
+			static_cast<float>(col * BLOCK_RENDER_SIDE_LENGTH), 
+			static_cast<float>((row - GAME_MAP_EXTRA_HEIGHT) * BLOCK_RENDER_SIDE_LENGTH) 
+		});
+        
+		rect.setSize(sf::Vector2f{ static_cast<float>(BLOCK_RENDER_SIDE_LENGTH), static_cast<float>(BLOCK_RENDER_SIDE_LENGTH) });
 		rect.setFillColor(color);
 		rect.setOutlineThickness(1.0f);
 		rect.setOutlineColor(sf::Color::White);
 		rt.draw(rect);
 	}
 public:
-	Tetris() : blocks{}, currentBlockInfo{}, blockGen{}, gameOver{ false } {
-		for (auto& row : blocks) {
-			row.fill(Block::Empty);
+	Tetris()
+	{
+		for (auto& row : gameMap) {
+			row.fill(BlockType::No_Block_Here);
 		}
-
-		currentBlockInfo = blockGen();
+		
+		currentBlock = gen();
 	}
 
-	void moveLeft() {
-		currentBlockInfo.col -= 1;
+	void move_left() {
+		currentBlock.col -= 1;
 
-		if (checkLeftCollision()) {
-			currentBlockInfo.col += 1;
-		}
-	}
-
-	void moveRight() {
-		currentBlockInfo.col += 1;
-
-		if (checkRightCollision()) {
-			currentBlockInfo.col -= 1;
+		if (check_left_collision()) {
+			currentBlock.col += 1;
 		}
 	}
 
-	void moveDown() {
-		currentBlockInfo.row += 1;
+	void move_right() {
+		currentBlock.col += 1;
 
-		if (checkBottomCollision()) {
-			currentBlockInfo.row -= 1;
+		if (check_right_collision()) {
+			currentBlock.col -= 1;
+		}
+	}
+
+	void move_down() {
+		currentBlock.row += 1;
+
+		if (check_bottom_collision()) {
+			currentBlock.row -= 1;
 
 			// 1. fill the current block into blocks array.
-			const BlockCoord& blockCoord = currentBlockInfo.getCoord();
-			for (const auto& coord : blockCoord) {
-				int16_t row = currentBlockInfo.row + coord.y;
-				int16_t col = currentBlockInfo.col + coord.x;
+			BlockShape const& shape = currentBlock.get_shape();
 
-				blocks[row][col] = currentBlockInfo.block;
+			for (const Coordinate& coord : shape) {
+				int32_t row = currentBlock.row + coord.y;
+				int32_t col = currentBlock.col + coord.x;
+
+				gameMap[row][col] = currentBlock.type;
 			}
 
 			// 2. try to erase lines.
-			tryEliminateLines();
+			try_eliminate_lines();
 
 			// 3. game over ?
-			if (!rowIsEmpty(EXTRA_HEIGHT)) {
+			if (!row_is_empty(GAME_MAP_EXTRA_HEIGHT)) {
 				gameOver = true;
 			}
 
 			// 4. change current block to a new one.
-			currentBlockInfo = blockGen();
+			currentBlock = gen();
 		}
 	}
 
 	void rotate() {
-		currentBlockInfo.rotation = (currentBlockInfo.rotation + 1) % 4;
+		currentBlock.rotationTimes = (currentBlock.rotationTimes + 1) % 4;
 
-		if (checkAllCollision()) {
-			currentBlockInfo.rotation = (currentBlockInfo.rotation + 3) % 4;
+		if (check_left_right_bottom_collision()) {
+			currentBlock.rotationTimes = (currentBlock.rotationTimes + 3) % 4;
 		}
 	}
 
 	void render(sf::RenderTarget& rt) {
 		// 1. rendering all blocks in the blocks array.
-		for (int16_t row = EXTRA_HEIGHT; row < TETRIS_HEIGHT + EXTRA_HEIGHT; ++row) {
-			for (int16_t col = 0; col < TETRIS_WIDTH; ++col) {
-				if (blocks[row][col] != Block::Empty) {
-					drawRect(rt, row, col, blockColorMapping[static_cast<int16_t>(blocks[row][col])]);
+		for (int32_t row = GAME_MAP_EXTRA_HEIGHT; row < GAME_MAP_HEIGHT + GAME_MAP_EXTRA_HEIGHT; ++row) {
+			for (int32_t col = 0; col < GAME_MAP_WIDTH; ++col) {
+				if (gameMap[row][col] != BlockType::No_Block_Here) {
+					draw_one_rect(rt, row, col, get_block_color(gameMap[row][col]));
 				}
 			}
 		}
 
 		// 2. rendering current block separately.
-		const BlockCoord& blockCoord = currentBlockInfo.getCoord();
-		for (const auto& coord : blockCoord) {
-			int16_t row = currentBlockInfo.row + coord.y;
-			int16_t col = currentBlockInfo.col + coord.x;
-			drawRect(rt, row, col, blockColorMapping[static_cast<int16_t>(currentBlockInfo.block)]);
+		BlockShape const& shape = currentBlock.get_shape();
+
+		for (const Coordinate& coord : shape) {
+			int32_t row = currentBlock.row + coord.y;
+			int32_t col = currentBlock.col + coord.x;
+
+			draw_one_rect(rt, row, col, currentBlock.get_color());
 		}
 	}
 
-	bool isGameOver() const noexcept {
+	bool is_game_over() const noexcept {
 		return gameOver;
 	}
 };
 
 int main() {
-	Tetris tetris;
+    Tetris tetris;
 
-	sf::RenderWindow window(sf::VideoMode(TETRIS_WIDTH * BLOCK_SIZE, TETRIS_HEIGHT * BLOCK_SIZE), "MikuTetris");
+	sf::RenderWindow window(sf::VideoMode(GAME_MAP_WIDTH * BLOCK_RENDER_SIDE_LENGTH, GAME_MAP_HEIGHT * BLOCK_RENDER_SIDE_LENGTH), "Tetris");
 	sf::Clock clock;
 	sf::Time accumulator = sf::Time::Zero;
 	sf::Time frameRate = sf::seconds(1.f / 30.f);
-	int16_t counter = 0;
+	uint32_t counter = 0;
 
 	while (window.isOpen()) {
 		while (accumulator > frameRate) {
@@ -393,13 +410,13 @@ int main() {
 						tetris.rotate();
 					}
 					else if (event.key.code == sf::Keyboard::Down) {
-						tetris.moveDown();
+						tetris.move_down();
 					}
 					else if (event.key.code == sf::Keyboard::Left) {
-						tetris.moveLeft();
+						tetris.move_left();
 					}
 					else if (event.key.code == sf::Keyboard::Right) {
-						tetris.moveRight();
+						tetris.move_right();
 					}
 				}
 			}
@@ -407,7 +424,7 @@ int main() {
 			++counter;
 			if (counter == 6) {
 				// even we don't press keys, block should fall down automatically.
-				tetris.moveDown();
+				tetris.move_down();
 				counter = 0;
 			}
 		}
@@ -417,10 +434,12 @@ int main() {
 		tetris.render(window);
 		window.display();
 
-		if (tetris.isGameOver()) {
+		if (tetris.is_game_over()) {
 			window.close();
 		}
 
 		accumulator += clock.restart();
 	}
+
+    return 0;
 }
