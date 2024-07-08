@@ -388,7 +388,7 @@ public:
 int main() {
     Tetris tetris;
 
-	sf::RenderWindow window(sf::VideoMode(GAME_MAP_WIDTH * BLOCK_RENDER_SIDE_LENGTH, GAME_MAP_HEIGHT * BLOCK_RENDER_SIDE_LENGTH), "Tetris");
+	sf::RenderWindow window(sf::VideoMode(GAME_MAP_WIDTH * BLOCK_RENDER_SIDE_LENGTH, GAME_MAP_HEIGHT * BLOCK_RENDER_SIDE_LENGTH), "Tetris", sf::Style::Titlebar | sf::Style::Close);
 	sf::Clock clock;
 	sf::Time accumulator = sf::Time::Zero;
 	sf::Time frameRate = sf::seconds(1.f / 30.f);
